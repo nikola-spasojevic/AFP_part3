@@ -13,21 +13,25 @@ sig
   val parse : 'a t -> int64_array -> 'a
 end
 
-let extract_bits : int * int -> int64_array -> int64 = (* Question 1(a)(i) *)
+(* Question 1(a)(i) *)
+let extract_bits : int * int -> int64_array -> int64 = 
   fun (lower, upper) arr -> let dim = Bigarray.Array1.dim in
   if lower > upper || (dim arr) * 64 < lower || (dim arr) * 64 < upper || upper - lower > 64 then
     assert false 
   else
-    let ml = lower mod 64 and mu = upper mod 64 in
-    let first = arr.{ml} in
-      if ml < mu then (* If the mod of the lower bound is still less than the mod of the upper bound, one number from array*)
-        Int64.shift_right first (63 - mu) 
-        (* zero padding from 0 - (ml + 63 - mu) *)
+    let mod_l = lower mod 64 and mod_u = upper mod 64 in (* modulus of the upper and lower bounds *)
+    let idx_l = lower/64 and idx_u = upper/64 in (* corresponding indexes of bounds *)
+    let first = arr.{idx_l} in 
+      if idx_l == idx_u then
+        let out = Int64.shift_left first mod_l in
+        Int64.shift_right_logical out (63 - (mod_u - mod_l)) 
       else
-        let second = arr.{mu} in
-        Int64.shift_left second mu
-        (* zero padding from 0 - (ml - mu) *)
-
+        let second = arr.{idx_u} in
+        let x1 = Int64.shift_right_logical second (63 - mod_u) in
+        let y1 = Int64.shift_left first mod_l in
+        let y2 = Int64.shift_right_logical y1 (63 - (mod_u + mod_l)) in
+          Int64.logxor x1 y2
+    
 module type MONAD =
 sig
   type _ t
@@ -41,13 +45,18 @@ sig
   include BIT_PARSER with type 'a t := 'a t
 end
 
-(* Question 1(a)(ii)
+(* Question 1(a)(ii)*)
 module Bit_parserM : BIT_PARSERM =
 struct
+  
+  (* takes in index of position (state), array and returns pair of the new state and the number of bits of the parser *)
+  type 'a t = int -> int64_array -> int * 'a 
+  let return x    = fun s arr -> (s, x) 
+  let (>>=) par f = fun s arr -> let (s', v) = par s arr in (f v) s' arr
+  let int64 ~bits = fun s arr -> (s + bits, extract_bits (bits, s + bits) arr)
+  let parse m arr = snd (m 0 arr)
 
 end
-*)
-
 
 module type APPLICATIVE =
 sig
@@ -62,12 +71,19 @@ sig
   include BIT_PARSER with type 'a t := 'a t
 end
 
-(* Question 1(a)(iii)
+(* Question 1(a)(iii) *)
 module Bit_parserA : BIT_PARSERA =
 struct
 
+  type 'a t = int -> int64_array -> int * 'a
+  let int64 ~bits = fun s arr -> (s + bits, extract_bits (bits, s + bits) arr)
+  let parse m arr = snd (m 0 arr)
+  let pure x = fun s arr -> (s, x) 
+  let (<*>) f m = fun s arr ->  let (s', v) = f s arr in 
+                                let (y, z) = m s' arr in (y, v z)
+
 end
-*)
+
 
 (* Question 1(a)(iv) is a written question, not a programming question. *)
 
