@@ -163,14 +163,84 @@ let intersect_ (o : float3 code) (d : float3 code) : obj -> float code = functio
                                       else infinity
                                     >.
                                   end
-
-                                    
-                                 
-
-
+let vec x = {x = x; y = x; z = x}
+let normalise_ (x : float3 sd) = 
+  let mag = dot_ x x in
+  match mag with
+    Sta y -> x /|@ Sta (vec (sqrt y))
+  | Dyn y -> x /|@ Dyn .<vec (sqrt .~y)>.
+                                  
+(* Question 2(d) *)
 let trace_ray_
     ~specular ~camera ~ambient ~light_colour ~light_position ~scene rayO rayD =
-  assert false (* Question 2(d) *)
+ (* Find the first point of intersection with the scene. *)
+  let t = infinity in
+  let find_first_intersection i col objs = 
+    let rec find_first_intersection' i = function
+      [] -> .<col>.
+    | obj :: objs ->
+    .<
+        let t_obj = .~(intersect_ rayO rayD obj) in
+        let x, x_i = .~(find_first_intersection' (succ i) objs) in
+        if t_obj < x then (t_obj, i)
+         else (x, x_i)
+    >.
+     in 
+     find_first_intersection' i objs
+  in
+
+  (* Shadow: find if the point is shadowed or not. *)
+  let rec find_shadowed k o_idx b toL = 
+    let rec find_shadowed' k = function
+        [] -> .<[]>.
+      | obj_sh :: obj_shs ->
+        .<
+          let next = .~(find_shadowed' (succ k) obj_shs) in
+              if k = .~o_idx then next
+              else 
+                let col = .~(intersect_ b toL obj_sh) in
+                col :: next
+        >.
+    in find_shadowed' k
+  in
+
+  .<
+      let t, o_idx = .~(find_first_intersection 0 (t,0) scene) in
+      (* Return none if the ray does not intersect *)
+      if t = infinity then None
+      else
+        (* Find the object. *) 
+        let obj = List.nth scene o_idx in
+        (* Find the point of intersection on the object. *)
+        let m = .~(unsd (Dyn rayO +|@ (Dyn rayD *|@ Dyn .<vec t>.))) in
+        (* Find properties of the object. *)
+        let n = obj_normal obj m in
+        let colour = obj_colour obj m in
+        let toL = normalize .~(unsd(Sta light_position -|@ Dyn .<m>.)) in
+        let toO = normalize .~(unsd(Sta camera -|@ Dyn .<m>.)) in
+        let b = .~(unsd(Dyn .<m>. +|@ (Dyn .<n>. *|@ Sta (vec 0.0001)))) in
+        let l = .~(find_shadowed 0 .<o_idx>. .<b>. .<toL>. scene) in
+        if List.length l <> 0 && minimum l < infinity
+        then None
+        else
+          let col_ray = vec ambient in
+          let lambert =
+            .~(unsd((Dyn .<colour>. *|@
+                     Dyn .<vec ((diffuse_c obj) *.
+                           max 0. .~(unsd(dot_ (Dyn .<n>.) (Dyn .<toL>.))))
+                         >.
+                     )
+                   )
+                  )
+          in
+          let specular = (
+            max 0. .~(unsd(dot_ (Dyn .<n>.) 
+                          (normalise_ (Dyn .<toL>. +|@ Dyn .<toO>.))))
+            ) ** specular
+          in
+          let phong = .~(unsd (Sta light_colour *|@ Dyn .<vec specular>.)) in
+          Some(obj, m, n, .~(unsd(Dyn .<col_ray>. +|@ Dyn .<lambert>. +|@ Dyn .<phong>.)))
+    >.
 
 let trace_ray ~specular ~camera ~ambient ~light_colour ~light_position ~scene =
   let code =
